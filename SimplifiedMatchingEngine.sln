@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35919.96
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimplifiedMatchingEngine", "SimplifiedMatchingEngine\SimplifiedMatchingEngine.csproj", "{4C3CEAD6-6C99-4899-A90A-E155078EE91D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimplifiedMatchingEngine.Tests", "SimplifiedMatchingEngine.Tests\SimplifiedMatchingEngine.Tests.csproj", "{A551FFCE-E303-4E29-B6D6-B377D08D9420}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4C3CEAD6-6C99-4899-A90A-E155078EE91D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4C3CEAD6-6C99-4899-A90A-E155078EE91D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4C3CEAD6-6C99-4899-A90A-E155078EE91D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4C3CEAD6-6C99-4899-A90A-E155078EE91D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A551FFCE-E303-4E29-B6D6-B377D08D9420}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A551FFCE-E303-4E29-B6D6-B377D08D9420}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A551FFCE-E303-4E29-B6D6-B377D08D9420}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A551FFCE-E303-4E29-B6D6-B377D08D9420}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {A7011764-5B10-4402-8062-426B45756CFE}
+	EndGlobalSection
+EndGlobal
