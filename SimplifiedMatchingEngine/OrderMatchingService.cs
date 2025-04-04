@@ -1,15 +1,16 @@
-﻿using System.Text;
+﻿using System.Collections.Concurrent;
+using System.Text;
 
 namespace SimplifiedMatchingEngine;
 
 /// <summary>
 /// Concurrent order book
 /// </summary>
-public class OrderMatchingService
+public sealed class OrderMatchingService
 {
-    private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = [];
+    private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = new(Comparer<decimal>.Create((a, b) => b.CompareTo(a)));
     private readonly SortedDictionary<decimal, LinkedList<Order>> _sellOrders = [];
-    private readonly IList<Trade> _tradingHistory = [];
+    private readonly ConcurrentQueue<Trade> _tradingHistory = [];
     private readonly Lock _lock = new();
 
     public void PlaceOrder(Order order)
@@ -46,21 +47,22 @@ public class OrderMatchingService
         }
         order.Status = OrderStatus.Canceled;
     }
+
     public decimal? GetBestPrice(OrderSide side)
     {
         using var _ = _lock.EnterScope();
-        var dictionary = side == OrderSide.Buy ? _buyOrders : _sellOrders;
-        return dictionary.Count > 0 ? dictionary.Last().Key : null;
+        var dictionary = side == OrderSide.Buy ? _sellOrders : _buyOrders;
+        return dictionary.Count > 0 ? dictionary.First().Key : null;
     }
 
     private bool MatchOrder(Order order)
     {
         var orders = order.Side == OrderSide.Buy ? _sellOrders : _buyOrders;
-        var bestPrice = GetBestPrice(1 - order.Side);
         using var scope = _lock.EnterScope();
+        var bestPrice = GetBestPrice(order.Side);
         while (bestPrice is not null && (order.Side == OrderSide.Buy && order.Price >= bestPrice || order.Side == OrderSide.Sell && order.Price <= bestPrice))
         {
-            var matchedOrder = orders[bestPrice.Value].First.Value;
+            var matchedOrder = orders[bestPrice.Value].First!.Value;
             if (matchedOrder.RemainingQuantity >= order.RemainingQuantity)
             {
                 matchedOrder.RemainingQuantity -= order.RemainingQuantity;
@@ -78,7 +80,7 @@ public class OrderMatchingService
                     matchedOrder.Status = OrderStatus.PartiallyFilled;
                 }
                 order.Status = OrderStatus.Filled;
-                _tradingHistory.Add(new Trade { Price = order.Price, Quantity = order.RemainingQuantity });
+                _tradingHistory.Enqueue(new Trade { Price = order.Price, Quantity = order.RemainingQuantity });
                 order.RemainingQuantity = 0;
                 return true;
             }
@@ -87,12 +89,13 @@ public class OrderMatchingService
                 order.Status = OrderStatus.PartiallyFilled;
                 order.RemainingQuantity -= matchedOrder.RemainingQuantity;
                 matchedOrder.Status = OrderStatus.Filled;
-                _tradingHistory.Add(new Trade { Price = matchedOrder.Price, Quantity = matchedOrder.RemainingQuantity });
+                matchedOrder.RemainingQuantity = 0;
+                _tradingHistory.Enqueue(new Trade { Price = matchedOrder.Price, Quantity = matchedOrder.RemainingQuantity });
                 orders[bestPrice.Value].RemoveFirst();
                 if (orders[bestPrice.Value].Count == 0)
                 {
                     orders.Remove(bestPrice.Value);
-                    bestPrice = GetBestPrice(1 - order.Side);
+                    bestPrice = GetBestPrice(order.Side);
                 }
             }
         }
@@ -103,13 +106,14 @@ public class OrderMatchingService
     {
         var sb = new StringBuilder();
         sb.AppendLine("Buy Orders:");
-        foreach (var queue in _buyOrders)
-            foreach (var order in queue.Value)
-                sb.AppendLine($"Price: {order.Price}, Quantity: {order.RemainingQuantity}");
-        sb.AppendLine("Sell Orders:");
-        foreach (var queue in _sellOrders)
-            foreach (var order in queue.Value)
-                sb.AppendLine($"Price: {order.Price}, Quantity: {order.RemainingQuantity}");
+        using (_lock.EnterScope())
+        {
+            foreach (var queue in _buyOrders)
+                sb.AppendLine($"Price: {queue.Key}, Quantity: {queue.Value.Sum(o => o.RemainingQuantity)}");
+            sb.AppendLine("Sell Orders:");
+            foreach (var queue in _sellOrders)
+                sb.AppendLine($"Price: {queue.Key}, Quantity: {queue.Value.Sum(o => o.RemainingQuantity)}");
+        }
         return sb.ToString();
     }
 
