@@ -1,4 +1,4 @@
-﻿namespace SimplifiedMatchingEngine;
+﻿namespace SimplifiedMatchingEngine.Models;
 
 public record Order
 {

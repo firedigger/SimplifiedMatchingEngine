@@ -1,4 +1,4 @@
-﻿namespace SimplifiedMatchingEngine;
+﻿namespace SimplifiedMatchingEngine.Models;
 
 internal class Trade
 {

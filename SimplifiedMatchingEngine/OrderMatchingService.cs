@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using SimplifiedMatchingEngine.Models;
+using System.Collections.Concurrent;
 using System.Text;
 
 namespace SimplifiedMatchingEngine;

@@ -1,4 +1,5 @@
 ﻿using SimplifiedMatchingEngine;
+using SimplifiedMatchingEngine.Models;
 
 var orderBook = new OrderMatchingService();
 orderBook.PlaceOrder(new Order(OrderSide.Buy, 100, 10));
