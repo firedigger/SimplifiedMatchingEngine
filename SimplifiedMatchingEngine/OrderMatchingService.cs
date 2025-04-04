@@ -1,25 +1,27 @@
 ﻿using SimplifiedMatchingEngine.Models;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 
 namespace SimplifiedMatchingEngine;
 
-/// <summary>
-/// Concurrent order book
-/// </summary>
 public sealed class OrderMatchingService
 {
-    private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = new(Comparer<decimal>.Create((a, b) => b.CompareTo(a)));
-    private readonly SortedDictionary<decimal, LinkedList<Order>> _sellOrders = [];
-    private readonly ConcurrentQueue<Trade> _tradingHistory = [];
-    private readonly Lock _lock = new();
-
     public void PlaceOrder(Order order)
     {
+        if (order.Price <= 0)
+        {
+            throw new ArgumentException("Price must be greater than zero.", nameof(order));
+        }
+        if (order.RemainingQuantity <= 0)
+        {
+            throw new ArgumentException("Quantity must be greater than zero.", nameof(order));
+        }
         if (MatchOrder(order))
         {
             return;
         }
+        // If the order was not filled, add it to the order book
         using (_lock.EnterScope())
         {
             var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
@@ -31,6 +33,7 @@ public sealed class OrderMatchingService
             list.AddLast(order);
         }
     }
+
     public void CancelOrder(Order order)
     {
         if (order.Status == OrderStatus.Filled || order.Status == OrderStatus.Canceled)
@@ -56,54 +59,7 @@ public sealed class OrderMatchingService
         return dictionary.Count > 0 ? dictionary.First().Key : null;
     }
 
-    private bool MatchOrder(Order order)
-    {
-        var orders = order.Side == OrderSide.Buy ? _sellOrders : _buyOrders;
-        using var scope = _lock.EnterScope();
-        var bestPrice = GetBestPrice(order.Side);
-        while (bestPrice is not null && (order.Side == OrderSide.Buy && order.Price >= bestPrice || order.Side == OrderSide.Sell && order.Price <= bestPrice))
-        {
-            var matchedOrder = orders[bestPrice.Value].First!.Value;
-            if (matchedOrder.RemainingQuantity >= order.RemainingQuantity)
-            {
-                matchedOrder.RemainingQuantity -= order.RemainingQuantity;
-                if (matchedOrder.RemainingQuantity == 0)
-                {
-                    matchedOrder.Status = OrderStatus.Filled;
-                    orders[bestPrice.Value].RemoveFirst();
-                    if (orders[bestPrice.Value].Count == 0)
-                    {
-                        orders.Remove(bestPrice.Value);
-                    }
-                }
-                else
-                {
-                    matchedOrder.Status = OrderStatus.PartiallyFilled;
-                }
-                order.Status = OrderStatus.Filled;
-                _tradingHistory.Enqueue(new Trade { Price = order.Price, Quantity = order.RemainingQuantity });
-                order.RemainingQuantity = 0;
-                return true;
-            }
-            else
-            {
-                order.Status = OrderStatus.PartiallyFilled;
-                order.RemainingQuantity -= matchedOrder.RemainingQuantity;
-                matchedOrder.Status = OrderStatus.Filled;
-                matchedOrder.RemainingQuantity = 0;
-                _tradingHistory.Enqueue(new Trade { Price = matchedOrder.Price, Quantity = matchedOrder.RemainingQuantity });
-                orders[bestPrice.Value].RemoveFirst();
-                if (orders[bestPrice.Value].Count == 0)
-                {
-                    orders.Remove(bestPrice.Value);
-                    bestPrice = GetBestPrice(order.Side);
-                }
-            }
-        }
-        return false;
-    }
-
-    public string PrintOrderBook()
+    public string GetOrderBookText()
     {
         var sb = new StringBuilder();
         sb.AppendLine("Buy Orders:");
@@ -118,7 +74,7 @@ public sealed class OrderMatchingService
         return sb.ToString();
     }
 
-    public string PrintTradingHistory()
+    public string GetTradingHistoryText()
     {
         var sb = new StringBuilder();
         sb.AppendLine("Trading History:");
@@ -126,4 +82,58 @@ public sealed class OrderMatchingService
             sb.AppendLine($"Price: {trade.Price}, Quantity: {trade.Quantity}");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Attempts to match the given order with existing orders in the order book.
+    /// If a match is found, the orders are updated to reflect the match.
+    /// </summary>
+    /// <param name="order">The order to match</param>
+    /// <returns>Whether the <paramref name="order"/> was filled</returns>
+    private bool MatchOrder(Order order)
+    {
+        var orders = order.Side == OrderSide.Buy ? _sellOrders : _buyOrders;
+        using var scope = _lock.EnterScope();
+        var bestPrice = GetBestPrice(order.Side);
+        while (bestPrice is not null && (order.Side == OrderSide.Buy && order.Price >= bestPrice || order.Side == OrderSide.Sell && order.Price <= bestPrice))
+        {
+            var matchedOrder = orders[bestPrice.Value].First!.Value;
+            if (MatchOrders(order, matchedOrder))
+            {
+                return true;
+            }
+            bestPrice = GetBestPrice(order.Side);
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Matches the given orders and updates their quantities accordingly.
+    /// If the <paramref name="matchedOrder"/> is fully filled, it is removed from the order book.
+    /// </summary>
+    /// <param name="placedOrder"></param>
+    /// <param name="matchedOrder"></param>
+    /// <returns>Whether the <paramref name="placedOrder"/> was filled</returns>
+    private bool MatchOrders(Order placedOrder, Order matchedOrder)
+    {
+        Debug.Assert(placedOrder.Side != matchedOrder.Side, "Orders must be of different sides to match.");
+        var orders = placedOrder.Side == OrderSide.Buy ? _sellOrders : _buyOrders;
+        var quantity = Math.Min(placedOrder.RemainingQuantity, matchedOrder.RemainingQuantity);
+        _tradingHistory.Enqueue(new Trade { Price = matchedOrder.Price, Quantity = quantity });
+        matchedOrder.ReduceQuantity(quantity);
+        placedOrder.ReduceQuantity(quantity);
+        if (matchedOrder.RemainingQuantity == 0)
+        {
+            orders[matchedOrder.Price].RemoveFirst();
+            if (orders[matchedOrder.Price].Count == 0)
+            {
+                orders.Remove(matchedOrder.Price);
+            }
+        }
+        return placedOrder.RemainingQuantity == 0;
+    }
+
+    private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = new(Comparer<decimal>.Create((a, b) => b.CompareTo(a)));
+    private readonly SortedDictionary<decimal, LinkedList<Order>> _sellOrders = [];
+    private readonly ConcurrentQueue<Trade> _tradingHistory = [];
+    private readonly Lock _lock = new();
 }

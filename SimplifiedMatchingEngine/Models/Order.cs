@@ -14,6 +14,15 @@ public record Order
     public int RemainingQuantity { get; set; }
     public OrderStatus Status { get; set; }
     public OrderSide Side { get; set; }
+    public void ReduceQuantity(int quantity)
+    {
+        if (quantity > RemainingQuantity)
+        {
+            throw new ArgumentException("Quantity to reduce exceeds remaining quantity.", nameof(quantity));
+        }
+        RemainingQuantity -= quantity;
+        Status = RemainingQuantity == 0 ? OrderStatus.Filled : OrderStatus.PartiallyFilled;
+    }
     public override string ToString()
     {
         return $"Order: {Side}, Price: {Price}, Remaining Quantity: {RemainingQuantity}, Status: {Status}";
