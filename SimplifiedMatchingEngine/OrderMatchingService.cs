@@ -7,22 +7,27 @@ namespace SimplifiedMatchingEngine;
 /// </summary>
 public class OrderMatchingService
 {
-    private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = []; //TODO: make concurrent
+    private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = [];
     private readonly SortedDictionary<decimal, LinkedList<Order>> _sellOrders = [];
     private readonly IList<Trade> _tradingHistory = [];
+    private readonly Lock _lock = new();
+
     public void PlaceOrder(Order order)
     {
         if (MatchOrder(order))
         {
             return;
         }
-        var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
-        if (!dictionary.TryGetValue(order.Price, out var list))
+        using (_lock.EnterScope())
         {
-            list = new LinkedList<Order>();
-            dictionary[order.Price] = list;
+            var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
+            if (!dictionary.TryGetValue(order.Price, out var list))
+            {
+                list = new LinkedList<Order>();
+                dictionary[order.Price] = list;
+            }
+            list.AddLast(order);
         }
-        list.AddLast(order);
     }
     public void CancelOrder(Order order)
     {
@@ -30,22 +35,29 @@ public class OrderMatchingService
         {
             throw new InvalidOperationException("Cannot cancel a filled or already canceled order.");
         }
-        //TODO: lock
-        var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
-        dictionary[order.Price].Remove(order);
-        if (dictionary[order.Price].Count == 0)
+        using (_lock.EnterScope())
         {
-            dictionary.Remove(order.Price);
+            var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
+            dictionary[order.Price].Remove(order);
+            if (dictionary[order.Price].Count == 0)
+            {
+                dictionary.Remove(order.Price);
+            }
         }
         order.Status = OrderStatus.Canceled;
     }
-    public decimal? GetBestBuyPrice() => _buyOrders.Count > 0 ? _buyOrders.Last().Key : null;
-    public decimal? GetBestSellPrice() => _sellOrders.Count > 0 ? _sellOrders.First().Key : null;
+    public decimal? GetBestPrice(OrderSide side)
+    {
+        using var _ = _lock.EnterScope();
+        var dictionary = side == OrderSide.Buy ? _buyOrders : _sellOrders;
+        return dictionary.Count > 0 ? dictionary.Last().Key : null;
+    }
 
     private bool MatchOrder(Order order)
     {
         var orders = order.Side == OrderSide.Buy ? _sellOrders : _buyOrders;
-        var bestPrice = order.Side == OrderSide.Buy ? GetBestSellPrice() : GetBestBuyPrice();
+        var bestPrice = GetBestPrice(1 - order.Side);
+        using var scope = _lock.EnterScope();
         while (bestPrice is not null && (order.Side == OrderSide.Buy && order.Price >= bestPrice || order.Side == OrderSide.Sell && order.Price <= bestPrice))
         {
             var matchedOrder = orders[bestPrice.Value].First.Value;
@@ -80,7 +92,7 @@ public class OrderMatchingService
                 if (orders[bestPrice.Value].Count == 0)
                 {
                     orders.Remove(bestPrice.Value);
-                    bestPrice = GetBestSellPrice();
+                    bestPrice = GetBestPrice(1 - order.Side);
                 }
             }
         }

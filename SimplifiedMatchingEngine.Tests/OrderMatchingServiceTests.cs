@@ -27,8 +27,8 @@ namespace SimplifiedMatchingEngine.Tests
             Assert.AreEqual(OrderStatus.Filled, buyOrder.Status);
             Assert.AreEqual(0, sellOrder.RemainingQuantity);
             Assert.AreEqual(OrderStatus.Filled, sellOrder.Status);
-            Assert.IsNull(orderMatchingService.GetBestBuyPrice());
-            Assert.IsNull(orderMatchingService.GetBestSellPrice());
+            Assert.IsNull(orderMatchingService.GetBestPrice(OrderSide.Buy));
+            Assert.IsNull(orderMatchingService.GetBestPrice(OrderSide.Sell));
         }
 
         [TestMethod]
@@ -54,7 +54,7 @@ namespace SimplifiedMatchingEngine.Tests
             orderMatchingService.PlaceOrder(new Order(OrderSide.Sell, 100, 5));
             Assert.AreEqual(OrderStatus.PartiallyFilled, order.Status);
             orderMatchingService.CancelOrder(order);
-            Assert.IsNull(orderMatchingService.GetBestBuyPrice());
+            Assert.IsNull(orderMatchingService.GetBestPrice(OrderSide.Sell));
             Assert.AreEqual(OrderStatus.Canceled, order.Status);
         }
 
@@ -86,9 +86,15 @@ namespace SimplifiedMatchingEngine.Tests
                 bag.Add(order);
                 orderMatchingService.PlaceOrder(order);
             });
-            Assert.IsNull(orderMatchingService.GetBestBuyPrice());
-            Assert.IsNull(orderMatchingService.GetBestSellPrice());
+            Assert.IsNull(orderMatchingService.GetBestPrice(OrderSide.Buy));
+            Assert.IsNull(orderMatchingService.GetBestPrice(OrderSide.Sell));
             Assert.IsTrue(bag.All(o => o.Status == OrderStatus.Filled));
+        }
+
+        [TestMethod]
+        public void ConcurrenctPlaceAndCancel()
+        {
+
         }
     }
 }
