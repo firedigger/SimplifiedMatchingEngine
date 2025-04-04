@@ -18,9 +18,10 @@ OrderMatchingService.cs // Core service responsible for placing, canceling, and 
 - Maintains internal `SortedDictionary<decimal, LinkedList<Order>>` for buy/sell sides.
 - `SortedDictionary` orders the prices in a convenient way for upkeeping the best price in the begining of the dictionary
 - `LinkedList` is chosen for efficient order removal
-- Uses a .NET 9 `Lock` to ensure thread safety.
+- Trades are collected in a `ConcurrentQueue` as only addition and iteration is required
+- Uses .NET 9 `Lock` to ensure thread safety.
 - Supports:
-  - Placing orders (with immediate matching if possible)
+  - Placing orders with immediate matching if possible
   - Canceling orders
   - Asking for best price
   - Printing order book and trade history

@@ -123,6 +123,7 @@ public sealed class OrderMatchingService
         placedOrder.ReduceQuantity(quantity);
         if (matchedOrder.RemainingQuantity == 0)
         {
+            using var scope = _lock.EnterScope();
             orders[matchedOrder.Price].RemoveFirst();
             if (orders[matchedOrder.Price].Count == 0)
             {
