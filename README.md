@@ -59,7 +59,7 @@ No external input files are required — it runs fully in-memory. The class meth
 
 ## Tests
 
-This project includes a comprehensive test suite (`OrderMatchingServiceTests.cs`) that validates both functional correctness and **thread safety** of the matching engine.
+This project includes a comprehensive test suite (`OrderMatchingServiceTests.cs`) that validates both functional correctness and thread safety of the matching engine.
 
 ### Test Coverage
 
@@ -75,3 +75,22 @@ Run using the .NET CLI:
 ```bash
 dotnet test
 ```
+
+## Concurrency and Locking Strategy
+
+The demonstrated implementation uses a simple global locking strategy that ensures thread-safety across all operations. While effective, this broad locking becomes a scalability bottleneck in highly concurrent systems, as the majority of operations are serialized through a single shared lock.
+
+It's worth considering **lock locality**. The engine's structure can be viewed as three-dimensional:
+
+1. Order side: Buy or Sell  
+2. Price level  
+3. List of orders at that price
+
+Clearly, matching at one price level does not need to block order placement at unrelated price levels. More granular locking — ideally at the **price-level list** — is achievable.
+
+That said, real-world usage typically clusters orders near the current market price. As a result, contention will naturally concentrate around a small set of lists. To alleviate this, we can aim for **finer-grained operations within a list** itself. For example, we could allow matching (i.e. dequeuing from the front) to happen concurrently with enqueuing new orders at the end.
+
+`ConcurrentQueue<T>` would be an ideal candidate, but it does not support arbitrary removals — which is necessary for order cancellation. There are two main strategies to work around this:
+
+1. **Custom concurrent queue implementation** with indexed removal.  
+2. **Postponed removal** — where canceled or filled orders are simply left in the queue until they're dequeued naturally, skipping over them as needed.
