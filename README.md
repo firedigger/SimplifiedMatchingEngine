@@ -19,7 +19,7 @@ OrderMatchingService.cs // Core service responsible for placing, canceling, and 
 - `SortedDictionary` orders the prices in a convenient way for upkeeping the best price in the begining of the dictionary
 - `LinkedList` is chosen for efficient order removal
 - Trades are collected in a `ConcurrentQueue` as only addition and iteration is required
-- Uses .NET 9 `Lock` to ensure thread safety.
+- Uses `ReaderWriterLockSlim` to ensure thread safety and efficiently distinguish read and write operations. Actual locking is done via an extension implementing a scoped IDisposable pattern to reduce bloat for try and release lock in a finally block
 - Supports:
   - Placing orders with immediate matching if possible
   - Canceling orders
@@ -93,4 +93,6 @@ That said, real-world usage typically clusters orders near the current market pr
 `ConcurrentQueue<T>` would be an ideal candidate, but it does not support arbitrary removals — which is necessary for order cancellation. There are two main strategies to work around this:
 
 1. **Custom concurrent queue implementation** with indexed removal.  
-2. **Postponed removal** — where canceled or filled orders are simply left in the queue until they're dequeued naturally, skipping over them as needed.
+2. **Postponed removal** — where canceled or filled orders are simply left in the queue until they're dequeued naturally, skipping over them as needed. However, that version still could not be fully lock-free as additional mechanism would be needed to synchonize for selected (peeked) orders while they are being matched and best price is being updated, with regards to skipping cancelled orders. A concurrent queue is an idea lock-free mechanism when one just needs to verify that 2 threads wouldn't dequeue the same element, but here we have to peek and check the element before deciding whether to dequeue it. And we can't dequeue and put it back as the FIFO priority needs to be upkept.  
+
+In conclusion, the current implementation combines robust thread-safety with simplicity and readibility.

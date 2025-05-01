@@ -5,7 +5,7 @@ using System.Text;
 
 namespace SimplifiedMatchingEngine;
 
-public sealed class OrderMatchingService
+public sealed class OrderMatchingService : IDisposable
 {
     public void PlaceOrder(Order order)
     {
@@ -22,7 +22,7 @@ public sealed class OrderMatchingService
             return;
         }
         // If the order was not filled, add it to the order book
-        using (_lock.EnterScope())
+        using (_lock.EnterReadScope())
         {
             var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
             if (!dictionary.TryGetValue(order.Price, out var list))
@@ -40,7 +40,7 @@ public sealed class OrderMatchingService
         {
             throw new InvalidOperationException("Cannot cancel a filled or already canceled order.");
         }
-        using (_lock.EnterScope())
+        using (_lock.EnterWriteScope())
         {
             var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
             dictionary[order.Price].Remove(order);
@@ -54,7 +54,7 @@ public sealed class OrderMatchingService
 
     public decimal? GetBestPrice(OrderSide side)
     {
-        using var _ = _lock.EnterScope();
+        using var _ = _lock.EnterReadScope();
         var dictionary = side == OrderSide.Buy ? _sellOrders : _buyOrders;
         return dictionary.Count > 0 ? dictionary.First().Key : null;
     }
@@ -63,7 +63,7 @@ public sealed class OrderMatchingService
     {
         var sb = new StringBuilder();
         sb.AppendLine("Buy Orders:");
-        using (_lock.EnterScope())
+        using (_lock.EnterReadScope())
         {
             foreach (var queue in _buyOrders)
                 sb.AppendLine($"Price: {queue.Key}, Quantity: {queue.Value.Sum(o => o.RemainingQuantity)}");
@@ -92,10 +92,11 @@ public sealed class OrderMatchingService
     private bool MatchOrder(Order order)
     {
         var orders = order.Side == OrderSide.Buy ? _sellOrders : _buyOrders;
-        using var scope = _lock.EnterScope();
+        using var _ = _lock.EnterUpgradeableReadScope();
         var bestPrice = GetBestPrice(order.Side);
         while (bestPrice is not null && (order.Side == OrderSide.Buy && order.Price >= bestPrice || order.Side == OrderSide.Sell && order.Price <= bestPrice))
         {
+            using var __ = _lock.EnterWriteScope();
             var matchedOrder = orders[bestPrice.Value].First!.Value;
             if (MatchOrders(order, matchedOrder))
             {
@@ -123,7 +124,6 @@ public sealed class OrderMatchingService
         placedOrder.ReduceQuantity(quantity);
         if (matchedOrder.RemainingQuantity == 0)
         {
-            using var scope = _lock.EnterScope();
             orders[matchedOrder.Price].RemoveFirst();
             if (orders[matchedOrder.Price].Count == 0)
             {
@@ -133,8 +133,13 @@ public sealed class OrderMatchingService
         return placedOrder.RemainingQuantity == 0;
     }
 
+    public void Dispose()
+    {
+        _lock.Dispose();
+    }
+
     private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = new(Comparer<decimal>.Create((a, b) => b.CompareTo(a)));
     private readonly SortedDictionary<decimal, LinkedList<Order>> _sellOrders = [];
     private readonly ConcurrentQueue<Trade> _tradingHistory = [];
-    private readonly Lock _lock = new();
+    private readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.SupportsRecursion);
 }

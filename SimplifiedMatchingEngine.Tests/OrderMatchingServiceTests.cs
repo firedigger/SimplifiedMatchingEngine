@@ -16,6 +16,12 @@ public sealed class OrderMatchingServiceTests
         _orderMatchingService = new OrderMatchingService();
     }
 
+    [TestCleanup]
+    public void Cleanup()
+    {
+        _orderMatchingService.Dispose();
+    }
+
     [TestMethod]
     public void SingleOrder()
     {
