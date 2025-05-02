@@ -158,7 +158,7 @@ public sealed class OrderMatchingServiceTests
     [TestMethod]
     public void Concurrency()
     {
-        const int count = 20;
+        const int count = 100;
         var bag = new ConcurrentBag<Order>();
         Parallel.For(0, count * 2, i =>
         {

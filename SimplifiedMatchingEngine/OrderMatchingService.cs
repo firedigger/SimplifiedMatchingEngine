@@ -17,21 +17,7 @@ public sealed class OrderMatchingService : IDisposable
         {
             throw new ArgumentException("Quantity must be greater than zero.", nameof(order));
         }
-        if (MatchOrder(order))
-        {
-            return;
-        }
-        // If the order was not filled, add it to the order book
-        using (_lock.EnterReadScope())
-        {
-            var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
-            if (!dictionary.TryGetValue(order.Price, out var list))
-            {
-                list = new LinkedList<Order>();
-                dictionary[order.Price] = list;
-            }
-            list.AddLast(order);
-        }
+        MatchOrder(order);
     }
 
     public void CancelOrder(Order order)
@@ -89,22 +75,28 @@ public sealed class OrderMatchingService : IDisposable
     /// </summary>
     /// <param name="order">The order to match</param>
     /// <returns>Whether the <paramref name="order"/> was filled</returns>
-    private bool MatchOrder(Order order)
+    private void MatchOrder(Order order)
     {
         var orders = order.Side == OrderSide.Buy ? _sellOrders : _buyOrders;
-        using var _ = _lock.EnterUpgradeableReadScope();
+        using var _ = _lock.EnterWriteScope();
         var bestPrice = GetBestPrice(order.Side);
         while (bestPrice is not null && (order.Side == OrderSide.Buy && order.Price >= bestPrice || order.Side == OrderSide.Sell && order.Price <= bestPrice))
         {
-            using var __ = _lock.EnterWriteScope();
-            var matchedOrder = orders[bestPrice.Value].First!.Value;
-            if (MatchOrders(order, matchedOrder))
+            var matchedOrder = orders[bestPrice.Value].First;
+            if (matchedOrder is not null && MatchOrders(order, matchedOrder.Value))
             {
-                return true;
+                return;
             }
             bestPrice = GetBestPrice(order.Side);
         }
-        return false;
+        // If the order was not filled, add it to the order book
+        var dictionary = order.Side == OrderSide.Buy ? _buyOrders : _sellOrders;
+        if (!dictionary.TryGetValue(order.Price, out var list))
+        {
+            list = new LinkedList<Order>();
+            dictionary[order.Price] = list;
+        }
+        list.AddLast(order);
     }
 
     /// <summary>
@@ -141,5 +133,5 @@ public sealed class OrderMatchingService : IDisposable
     private readonly SortedDictionary<decimal, LinkedList<Order>> _buyOrders = new(Comparer<decimal>.Create((a, b) => b.CompareTo(a)));
     private readonly SortedDictionary<decimal, LinkedList<Order>> _sellOrders = [];
     private readonly ConcurrentQueue<Trade> _tradingHistory = [];
-    private readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.SupportsRecursion);
+    private readonly ReaderWriterLockSlim _lock = new();
 }

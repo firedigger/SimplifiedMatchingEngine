@@ -2,27 +2,42 @@
 
 public static class ReaderWriterLockSlimExtensions
 {
-    public static IDisposable EnterReadScope(this ReaderWriterLockSlim rwLock)
+    private static readonly ThreadLocal<LockType?> inLock = new(() => null);
+
+    private static IDisposable EnterLockScope(ReaderWriterLockSlim rwLock, LockType type)
     {
-        rwLock.EnterReadLock();
-        return new Releaser(rwLock, LockType.Read);
+        if (inLock.Value.HasValue && inLock.Value >= type)
+        {
+            return DummyReleaser.Instance;
+        }
+        switch (type)
+        {
+            case LockType.Read:
+                rwLock.EnterReadLock();
+                break;
+            case LockType.Write:
+                rwLock.EnterWriteLock();
+                break;
+            case LockType.UpgradeableRead:
+                rwLock.EnterUpgradeableReadLock();
+                break;
+        }
+        inLock.Value = type;
+        return new Releaser(rwLock, type);
     }
 
-    public static IDisposable EnterWriteScope(this ReaderWriterLockSlim rwLock)
-    {
-        rwLock.EnterWriteLock();
-        return new Releaser(rwLock, LockType.Write);
-    }
+    public static IDisposable EnterReadScope(this ReaderWriterLockSlim rwLock) =>
+        EnterLockScope(rwLock, LockType.Read);
 
-    public static IDisposable EnterUpgradeableReadScope(this ReaderWriterLockSlim rwLock)
-    {
-        rwLock.EnterUpgradeableReadLock();
-        return new Releaser(rwLock, LockType.UpgradeableRead);
-    }
+    public static IDisposable EnterWriteScope(this ReaderWriterLockSlim rwLock) =>
+        EnterLockScope(rwLock, LockType.Write);
 
-    private enum LockType { Read, Write, UpgradeableRead }
+    public static IDisposable EnterUpgradeableReadScope(this ReaderWriterLockSlim rwLock) =>
+        EnterLockScope(rwLock, LockType.UpgradeableRead);
 
-    private readonly struct Releaser(ReaderWriterLockSlim rwLock, ReaderWriterLockSlimExtensions.LockType type) : IDisposable
+    private enum LockType { Read, UpgradeableRead, Write }
+
+    private readonly struct Releaser(ReaderWriterLockSlim rwLock, LockType type) : IDisposable
     {
         public void Dispose()
         {
@@ -38,6 +53,13 @@ public static class ReaderWriterLockSlimExtensions
                     rwLock.ExitUpgradeableReadLock();
                     break;
             }
+            inLock.Value = null;
         }
+    }
+
+    private readonly struct DummyReleaser : IDisposable
+    {
+        public static readonly DummyReleaser Instance = new();
+        public void Dispose() { }
     }
 }
